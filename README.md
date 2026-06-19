@@ -1,6 +1,6 @@
 # fix-cron — fix GHA cron rot
 
-Two small, tested Go tools plus this design doc.
+Three small, tested Go tools plus this design doc.
 
 They make GitHub Actions crons durable and observable.
 
@@ -71,6 +71,43 @@ Catch crons that have silently stopped.
 - The alert step is one `Emit()` function, so a Slack or GitHub-issue sink
   can drop in later.
 
+### Pillar C — prevention (`cmd/cronlint`)
+
+Stop new unmanaged crons from landing at all.
+
+`cmd/cronlint` is a CI-time check. It reads workflow files (the changed
+files in a PR, or a whole tree with `--dir`) and fails on crons that break
+policy:
+
+- default — a cron-bearing workflow must be in the registry (owner +
+  cadence on record) or the allow-list.
+- `--ban-all` — every cron is rejected unless the file is allow-listed.
+
+What a lint can and cannot do:
+
+- It cannot guarantee a durable owner. A cron's actor is set at merge time
+  by whoever pushes the cron-syntax change. That identity is not in the PR
+  diff, so no lint can know it.
+- It can force every cron to be registered or allow-listed, and fail the
+  rest. That is the prevention half.
+
+#### Ensuring only `li-cron` merges cron changes
+
+There is no native GitHub rule that says "PRs touching a `cron:` must be
+merged by li-cron." Merger-identity rules cannot key off changed paths. You
+get there by stacking:
+
+1. Lock the branch (native, broad). Branch protection → restrict who can
+   push to the default branch → only the li-cron app. Every merge is the
+   bot, so every cron becomes bot-owned. Cost: all merges go through the bot.
+2. Required check + bot-merge (native, targeted). Run `cronlint` as a
+   required status check so humans cannot merge a cron PR (red check). The
+   li-cron app is the only allowed merger and lands the squash, so the bot
+   is the actor. Use `cronlint --list-touched` to tell that bot-merge which
+   PRs touch a cron. Catch: a repo admin with bypass can still override.
+3. Backstop (eventual). `cmd/deadman` + `cmd/rehome` sweep anything that
+   slips: admin bypass, repos not yet on the policy.
+
 ## Data flow
 
 Both tools reuse the existing pipeline. They fetch nothing new.
@@ -97,9 +134,11 @@ fix-cron/
     inventory/   crons.json / last_runs.json types + loaders
     deadman/     deadman assessment (CollapseFiles, Assess, Missed, Emit)
     rehome/      dry-run re-home planner (Plan, Emit)
+    cronlint/    prevention lint (ParseCrons, Lint, Config, Emit)
   cmd/
     deadman/     deadman CLI
     rehome/      re-home CLI
+    cronlint/    prevention-lint CLI
 ```
 
 Each package has a sibling `*_test.go`. Go's built-in `testing`.
@@ -115,11 +154,20 @@ go run ./cmd/deadman --json-out ../reports/cron/deadman.json
 go run ./cmd/rehome
 go run ./cmd/rehome --json-out ../reports/cron/rehome_plan.json
 
+go run ./cmd/cronlint --registry cron-registry.txt path/to/.github/workflows/foo.yml
+go run ./cmd/cronlint --ban-all --allow 'vendor/**' --dir ..
+go run ./cmd/cronlint --list-touched --dir ..
+
 go test ./...
 ```
 
-The tools default to `../data/cron/linkedin-actions/{crons,last_runs}.json`.
+The deadman and rehome tools default to
+`../data/cron/linkedin-actions/{crons,last_runs}.json`.
 Override with `--crons` / `--last-runs`.
+
+`cronlint` takes workflow file paths as arguments (for example
+`git diff --name-only` output) or walks a tree with `--dir`. It exits 1 on
+violations, so it works as a required CI check.
 
 ## Safety
 
@@ -131,6 +179,7 @@ Override with `--crons` / `--last-runs`.
 ## Future work (out of scope for this prototype)
 
 - Apply mode: open a draft PR per repo for the re-home edit.
-- Prevention: a CI lint that flags new human-owned crons at PR time.
+- A li-cron bot-merge action that consumes `cronlint --list-touched` and
+  lands cron PRs as the durable account.
 - Real alert sinks: Slack, GitHub issues.
 - A cron registry: expected cadence and owning team as the source of truth.
