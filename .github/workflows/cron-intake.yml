@@ -26,6 +26,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Build cronbot
+        run: go build -o cronbot ./cmd/cronbot
       - name: Run cronbot on the request
         id: cronbot
         env:
@@ -34,7 +36,7 @@ jobs:
         run: |
           printf '%s' "$ISSUE_BODY" > issue.md
           set +e
-          go run ./cmd/cronbot --issue-body issue.md --request-url "$ISSUE_URL" > plan.txt 2> err.txt
+          ./cronbot --issue-body issue.md --request-url "$ISSUE_URL" > plan.txt 2> err.txt
           code=$?
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
