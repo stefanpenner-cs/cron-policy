@@ -11,6 +11,10 @@
 //
 // Reads the issue body from --issue-body, or stdin when that is "-" or empty.
 // Exits 1 when the request is invalid (with errors suitable to comment back).
+//
+// With --commit-push it also commits the registry change and pushes it to
+// --branch, retrying on a non-fast-forward by re-syncing and re-applying (see
+// internal/gitsync). Run it from the repo root (so --git-dir "." matches cwd).
 package main
 
 import (
@@ -21,9 +25,17 @@ import (
 	"os"
 
 	"fixcron/internal/cronbot"
+	"fixcron/internal/gitsync"
 	"fixcron/internal/intake"
 	"fixcron/internal/registry"
 )
+
+// commitConfig controls the optional commit-and-push of the registry change.
+type commitConfig struct {
+	enabled                                      bool
+	gitDir, remote, branch, message, name, email string
+	maxAttempts                                  int
+}
 
 func main() {
 	bodyPath := flag.String("issue-body", "-", "issue-form body file ('-' or empty = stdin)")
@@ -31,7 +43,29 @@ func main() {
 	registryPath := flag.String("registry", "", "central registry JSON to upsert into (omit to skip the write)")
 	jsonOut := flag.String("json-out", "", "write the plan as JSON to this path")
 	remove := flag.Bool("remove", false, "process a removal request: de-register instead of register")
+	commitPush := flag.Bool("commit-push", false, "commit the registry change and push it to --branch, retrying on conflict")
+	gitDir := flag.String("git-dir", ".", "git working tree for --commit-push (should equal the current directory)")
+	remote := flag.String("remote", "origin", "git remote to push to with --commit-push")
+	branch := flag.String("branch", "", "branch to push to (required with --commit-push)")
+	maxAttempts := flag.Int("max-attempts", 8, "max sync+apply+push tries for --commit-push")
+	commitMessage := flag.String("commit-message", "", "commit message for --commit-push (defaulted when empty)")
+	gitName := flag.String("git-name", "cron-bot[bot]", "commit author/committer name for --commit-push")
+	gitEmail := flag.String("git-email", "cron-bot[bot]@users.noreply.github.com", "commit author/committer email for --commit-push")
 	flag.Parse()
+
+	co := commitConfig{
+		enabled: *commitPush, gitDir: *gitDir, remote: *remote, branch: *branch,
+		message: *commitMessage, name: *gitName, email: *gitEmail, maxAttempts: *maxAttempts,
+	}
+	if co.enabled {
+		if *registryPath == "" || co.branch == "" {
+			fmt.Fprintln(os.Stderr, "--commit-push requires --registry and --branch")
+			os.Exit(2)
+		}
+		if co.message == "" {
+			co.message = defaultCommitMessage(*remove)
+		}
+	}
 
 	body, err := readBody(*bodyPath)
 	if err != nil {
@@ -42,7 +76,7 @@ func main() {
 	req := intake.Parse(body)
 
 	if *remove {
-		runRemoval(req, *requestURL, *registryPath, *jsonOut)
+		runRemoval(req, *requestURL, *registryPath, *jsonOut, co)
 		return
 	}
 
@@ -58,33 +92,32 @@ func main() {
 	printPlan(plan, os.Stdout)
 
 	if *registryPath != "" {
-		reg, err := registry.Load(*registryPath)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "load registry:", err)
-			os.Exit(2)
+		var added bool
+		apply := func() error {
+			reg, err := registry.Load(*registryPath)
+			if err != nil {
+				return err
+			}
+			added = reg.Upsert(plan.Entry)
+			return reg.Save(*registryPath)
 		}
-		added := reg.Upsert(plan.Entry)
-		if err := reg.Save(*registryPath); err != nil {
-			fmt.Fprintln(os.Stderr, "save registry:", err)
-			os.Exit(2)
+		if co.enabled {
+			syncRegistry(*registryPath, apply, co, os.Stdout)
+		} else {
+			if err := apply(); err != nil {
+				fmt.Fprintln(os.Stderr, "update registry:", err)
+				os.Exit(2)
+			}
+			verb := "updated"
+			if added {
+				verb = "added"
+			}
+			fmt.Fprintf(os.Stdout, "\nregistry %s: %s\n", verb, plan.Entry.Key())
 		}
-		verb := "updated"
-		if added {
-			verb = "added"
-		}
-		fmt.Fprintf(os.Stdout, "\nregistry %s: %s\n", verb, plan.Entry.Key())
 	}
 
 	if *jsonOut != "" {
-		b, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "marshal plan:", err)
-			os.Exit(2)
-		}
-		if err := os.WriteFile(*jsonOut, append(b, '\n'), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, "write plan:", err)
-			os.Exit(2)
-		}
+		writePlanJSON(plan, *jsonOut)
 	}
 }
 
@@ -100,7 +133,7 @@ func readBody(path string) (string, error) {
 // runRemoval validates an approved removal request, prints the removal plan, and
 // (when --registry is given) de-registers the cron from the central catalog. The
 // workflow performs the target-repo schedule deletion as the cron-bot App.
-func runRemoval(req intake.CronRequest, requestURL, registryPath, jsonOut string) {
+func runRemoval(req intake.CronRequest, requestURL, registryPath, jsonOut string, co commitConfig) {
 	if errs := req.ValidateRemoval(); len(errs) > 0 {
 		fmt.Fprintln(os.Stderr, "Invalid cron removal request:")
 		for _, e := range errs {
@@ -113,32 +146,78 @@ func runRemoval(req intake.CronRequest, requestURL, registryPath, jsonOut string
 	printRemovalPlan(plan, os.Stdout)
 
 	if registryPath != "" {
-		reg, err := registry.Load(registryPath)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "load registry:", err)
-			os.Exit(2)
+		var removed bool
+		apply := func() error {
+			reg, err := registry.Load(registryPath)
+			if err != nil {
+				return err
+			}
+			removed = reg.Remove(plan.RegistryKey)
+			return reg.Save(registryPath)
 		}
-		if reg.Remove(plan.RegistryKey) {
-			if err := reg.Save(registryPath); err != nil {
-				fmt.Fprintln(os.Stderr, "save registry:", err)
+		if co.enabled {
+			syncRegistry(registryPath, apply, co, os.Stdout)
+		} else {
+			if err := apply(); err != nil {
+				fmt.Fprintln(os.Stderr, "update registry:", err)
 				os.Exit(2)
 			}
-			fmt.Fprintf(os.Stdout, "\nregistry de-registered: %s\n", plan.RegistryKey)
-		} else {
-			fmt.Fprintf(os.Stdout, "\nregistry: %s was not tracked (nothing to de-register)\n", plan.RegistryKey)
+			if removed {
+				fmt.Fprintf(os.Stdout, "\nregistry de-registered: %s\n", plan.RegistryKey)
+			} else {
+				fmt.Fprintf(os.Stdout, "\nregistry: %s was not tracked (nothing to de-register)\n", plan.RegistryKey)
+			}
 		}
 	}
 
 	if jsonOut != "" {
-		b, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "marshal plan:", err)
-			os.Exit(2)
-		}
-		if err := os.WriteFile(jsonOut, append(b, '\n'), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, "write plan:", err)
-			os.Exit(2)
-		}
+		writePlanJSON(plan, jsonOut)
+	}
+}
+
+// syncRegistry runs apply against the latest remote tip, then commits and pushes
+// registryPath, retrying on a non-fast-forward by re-syncing and re-applying.
+func syncRegistry(registryPath string, apply func() error, co commitConfig, w io.Writer) {
+	repo := &gitsync.ShellRepo{
+		Dir: co.gitDir, Remote: co.remote, Branch: co.branch,
+		Name: co.name, Email: co.email,
+	}
+	res, err := gitsync.Run(repo, apply, gitsync.Options{
+		Message:     co.message,
+		Paths:       []string{registryPath},
+		MaxAttempts: co.maxAttempts,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "commit+push registry:", err)
+		os.Exit(2)
+	}
+	if res.NoOp {
+		fmt.Fprintf(w, "\nregistry already up to date; nothing to push (%d attempt(s))\n", res.Attempts)
+		return
+	}
+	fmt.Fprintf(w, "\nregistry committed and pushed (%d attempt(s))\n", res.Attempts)
+}
+
+// defaultCommitMessage is used when --commit-push is set without an explicit
+// --commit-message.
+func defaultCommitMessage(remove bool) string {
+	if remove {
+		return "chore(cron): de-register cron from registry"
+	}
+	return "chore(cron): register cron in registry"
+}
+
+// writePlanJSON marshals any plan value and writes it to path (with a trailing
+// newline).
+func writePlanJSON(plan any, path string) {
+	b, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "marshal plan:", err)
+		os.Exit(2)
+	}
+	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "write plan:", err)
+		os.Exit(2)
 	}
 }
 

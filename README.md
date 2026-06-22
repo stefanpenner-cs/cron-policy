@@ -37,6 +37,10 @@ deletes the schedule and de-registers it.
 Because every change — add, edit, or remove — goes through the bot, the registry
 never drifts from what is really running.
 
+The registry is one shared JSON file, so two requests can land at once. The bot
+writes it race-safe: it syncs to the latest, re-applies the change, and pushes —
+retrying if someone else pushed first. No lost writes, no merge conflicts.
+
 ## Sequence diagrams
 
 How a request flows from issue to durable cron. Same form, same jobs for add and
