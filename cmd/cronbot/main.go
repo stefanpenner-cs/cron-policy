@@ -47,7 +47,7 @@ func main() {
 	gitDir := flag.String("git-dir", ".", "git working tree for --commit-push (should equal the current directory)")
 	remote := flag.String("remote", "origin", "git remote to push to with --commit-push")
 	branch := flag.String("branch", "", "branch to push to (required with --commit-push)")
-	maxAttempts := flag.Int("max-attempts", 8, "max sync+apply+push tries for --commit-push")
+	maxAttempts := flag.Int("max-attempts", 3, "max sync+apply+push tries for --commit-push")
 	commitMessage := flag.String("commit-message", "", "commit message for --commit-push (defaulted when empty)")
 	gitName := flag.String("git-name", "cron-bot[bot]", "commit author/committer name for --commit-push")
 	gitEmail := flag.String("git-email", "cron-bot[bot]@users.noreply.github.com", "commit author/committer email for --commit-push")
