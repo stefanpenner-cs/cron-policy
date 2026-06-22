@@ -39,3 +39,15 @@ func TestBuildPlanBranchAndEntry(t *testing.T) {
 		t.Fatalf("registry should record the real schedule, got %q", p.Entry.Expr)
 	}
 }
+
+func TestBuildPlanNoSafeRewriteKeepsExpr(t *testing.T) {
+	r := req()
+	r.Expr = "garbage" // not a 5-field cron -> cronequiv can't rewrite
+	p := BuildPlan(r, "https://github.com/o/r/issues/1")
+	if p.CanRewrite {
+		t.Fatal("non-cron expr should not be rewritable")
+	}
+	if p.NewExpr != p.OldExpr {
+		t.Fatalf("no-rewrite should keep the expr, got new=%q old=%q", p.NewExpr, p.OldExpr)
+	}
+}

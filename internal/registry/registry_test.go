@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -79,5 +80,24 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(got.Entries) != 1 || got.Entries[0] != sample() {
 		t.Fatalf("round-trip mismatch: %#v", got.Entries)
+	}
+}
+
+func TestLoadMalformedJSONErrors(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "registry.json")
+	if err := os.WriteFile(p, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatal("malformed JSON should error")
+	}
+}
+
+func TestSaveToBadPathErrors(t *testing.T) {
+	r := &Registry{}
+	r.Upsert(sample())
+	bad := filepath.Join(t.TempDir(), "no-such-dir", "registry.json")
+	if err := r.Save(bad); err == nil {
+		t.Fatal("save into a missing directory should error")
 	}
 }
