@@ -95,12 +95,9 @@ jobs:
         run: |
           printf '%s' "$ISSUE_BODY" > issue.md
           go run ./cmd/cronbot --issue-body issue.md --request-url "$ISSUE_URL" \
-            --registry registry.json --json-out plan.json
-          git config user.name 'cron-bot[bot]'
-          git config user.email 'cron-bot[bot]@users.noreply.github.com'
-          git add registry.json
-          git commit -m "chore(cron): register ${{ github.event.issue.title }}" || echo "registry unchanged"
-          git push
+            --registry registry.json --json-out plan.json \
+            --commit-push --branch "${{ github.event.repository.default_branch }}" \
+            --commit-message "chore(cron): register ${{ github.event.issue.title }}"
       - name: Land the cron in the target repo
         run: |
           echo "TODO(human-judgment): land the cron in the target repo as the App."
@@ -187,12 +184,9 @@ jobs:
         run: |
           printf '%s' "$ISSUE_BODY" > issue.md
           go run ./cmd/cronbot --remove --issue-body issue.md --request-url "$ISSUE_URL" \
-            --registry registry.json --json-out plan.json
-          git config user.name 'cron-bot[bot]'
-          git config user.email 'cron-bot[bot]@users.noreply.github.com'
-          git add registry.json
-          git commit -m "chore(cron): de-register ${{ github.event.issue.title }}" || echo "registry unchanged"
-          git push
+            --registry registry.json --json-out plan.json \
+            --commit-push --branch "${{ github.event.repository.default_branch }}" \
+            --commit-message "chore(cron): de-register ${{ github.event.issue.title }}"
       - name: Delete the schedule in the target repo
         run: |
           echo "TODO(human-judgment): delete the schedule in the target repo as the App."
