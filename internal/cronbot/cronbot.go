@@ -17,6 +17,11 @@ import (
 	"fixcron/internal/rehome"
 )
 
+// OwnerTeam is the single team accountable for every managed cron and the only
+// crew allowed to approve and merge cron changes. It is fixed policy, not a
+// per-request field.
+const OwnerTeam = "ci-cd-platform-reviewers"
+
 // Plan is everything the intake workflow needs to land a li-cron-owned cron.
 type Plan struct {
 	Repo          string         `json:"repo"`
@@ -61,8 +66,7 @@ func BuildPlan(req intake.CronRequest, requestURL string) Plan {
 			Repo:      req.Repo,
 			Path:      req.Path,
 			Expr:      req.Expr,
-			OwnerTeam: req.OwnerTeam,
-			Cadence:   req.Cadence,
+			OwnerTeam: OwnerTeam,
 			Request:   requestURL,
 		},
 	}

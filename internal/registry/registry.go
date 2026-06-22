@@ -1,7 +1,8 @@
 // Package registry is the central cron catalog: the source of truth for every
-// managed cron (which repo, which file, the schedule, the owning team, the
-// cadence, and the request it came from). The intake bot upserts entries here;
-// deadman and rehome can consume it.
+// managed cron (which repo, which file, the schedule, the owning team, and the
+// request it came from). The intake bot upserts entries here; deadman and
+// rehome can consume it. Cadence is not stored — the cron expression already
+// encodes it (see cronsched.IntervalDays).
 //
 // Stored as a JSON array to keep the module dependency-free (matching the rest
 // of fixcron). One entry per (repo, path).
@@ -22,7 +23,6 @@ type Entry struct {
 	Path      string `json:"path"`
 	Expr      string `json:"cron_expression"`
 	OwnerTeam string `json:"owner_team"`
-	Cadence   string `json:"cadence"`
 	Request   string `json:"request"`
 }
 
@@ -59,7 +59,7 @@ func Load(path string) (*Registry, error) {
 func (r *Registry) Validate() []error {
 	var errs []error
 	for _, e := range r.Entries {
-		if e.Repo == "" || e.Path == "" || e.OwnerTeam == "" || e.Cadence == "" {
+		if e.Repo == "" || e.Path == "" || e.OwnerTeam == "" {
 			errs = append(errs, fmt.Errorf("%s: missing required field", e.Key()))
 		}
 		if len(strings.Fields(e.Expr)) != 5 {

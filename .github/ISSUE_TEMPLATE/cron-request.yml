@@ -1,7 +1,6 @@
 # Cron request issue form.
-# Lives at .github/ISSUE_TEMPLATE/cron-request.yml in the central cron-policy repo.
 # The field labels MUST match what cronbot parses (Target repository, Workflow
-# path, Cron expression, Owner team, Cadence, Justification).
+# path, Cron expression, Justification).
 name: Cron request
 description: Request a scheduled (cron) workflow, owned and merged by li-cron[bot].
 title: "[cron] "
@@ -11,8 +10,10 @@ body:
     attributes:
       value: |
         Humans cannot merge cron changes directly (the identity-gate check
-        blocks them). File this request; the platform crew signs off; li-cron
-        lands the change so the bot is the durable owner.
+        blocks them). File this request; the ci-cd-platform-reviewers crew
+        signs off; li-cron lands the change so the bot is the durable owner.
+
+        The owning team is fixed (ci-cd-platform-reviewers) and is not a field.
   - type: input
     id: target-repository
     attributes:
@@ -33,24 +34,8 @@ body:
     id: cron-expression
     attributes:
       label: Cron expression
-      description: 5-field cron (UTC).
+      description: 5-field cron (UTC). The cadence is read from this — no separate field.
       placeholder: 0 9 * * *
-    validations:
-      required: true
-  - type: input
-    id: owner-team
-    attributes:
-      label: Owner team
-      description: The team accountable for this cron.
-      placeholder: ci-cd-platform-reviewers
-    validations:
-      required: true
-  - type: input
-    id: cadence
-    attributes:
-      label: Cadence
-      description: Human cadence, recorded in the registry for deadman.
-      placeholder: daily
     validations:
       required: true
   - type: textarea

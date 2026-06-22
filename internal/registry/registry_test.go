@@ -19,7 +19,7 @@ func sample() Entry {
 	return Entry{
 		Repo: "linkedin-actions/foo", Path: ".github/workflows/nightly.yml",
 		Expr: "0 9 * * *", OwnerTeam: "ci-cd-platform-reviewers",
-		Cadence: "daily", Request: "https://github.com/o/r/issues/1",
+		Request: "https://github.com/o/r/issues/1",
 	}
 }
 

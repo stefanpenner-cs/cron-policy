@@ -79,8 +79,8 @@ Stop new unmanaged crons from landing at all.
 files in a PR, or a whole tree with `--dir`) and fails on crons that break
 policy:
 
-- default — a cron-bearing workflow must be in the registry (owner +
-  cadence on record) or the allow-list.
+- default — a cron-bearing workflow must be in the registry (owner on
+  record) or the allow-list.
 - `--ban-all` — every cron is rejected unless the file is allow-listed.
 
 What a lint can and cannot do:
@@ -100,14 +100,16 @@ into a real flow:
   each changed workflow against the base and fails any PR that adds or changes
   a cron value unless the PR author is `li-cron[bot]`. Humans are forced
   through intake. (Removing a cron is always allowed.)
-- **Intake bot (`cmd/cronbot` + `ci/intake.yml`).** A person files a
-  `cron-request` issue form. `cronbot` parses and validates it. The crew signs
-  off via a GitHub Environment gate. Then `cronbot` updates the central
-  registry and the li-cron App lands the change (squash merge), so the bot is
-  the actor.
+- **Intake bot (`cmd/cronbot` + `.github/workflows/cron-intake.yml`).** A person
+  files a `cron-request` issue form. `cronbot` parses and validates it, and the
+  workflow comments the result back on the issue. The crew signs off via a
+  GitHub Environment gate. Then `cronbot` updates the central registry and the
+  li-cron App lands the change (squash merge), so the bot is the actor.
 - **Central registry (`internal/registry`, `registry.json`).** The catalog of
-  every managed cron: repo, path, schedule, owner team, cadence, request link.
-  The source of truth that deadman/rehome consume.
+  every managed cron: repo, path, schedule, owner team, request link. The
+  source of truth that deadman/rehome consume. The owning team is fixed policy
+  (`cronbot.OwnerTeam`, not a request field). Cadence is not stored — the cron
+  expression already encodes it.
 
 Why an identity gate beats a path rule: there is no native GitHub rule that
 says "PRs touching a `cron:` must be merged by li-cron." Merger-identity rules
@@ -118,9 +120,10 @@ Backstop: a repo admin with bypass can still force a cron in. `cmd/deadman` +
 `cmd/rehome` sweep anything that slips.
 
 Enterprise rollout (one shared tool repo, central registry, the intake flow,
-one ruleset per org) is spelled out in `ci/README.md`, with ready-to-publish
-templates: `ci/required-workflow.yml` (identity gate), `ci/intake.yml`,
-`ci/ISSUE_TEMPLATE/cron-request.yml`, `ci/org-ruleset.example.json`.
+one ruleset per org) is spelled out in `ci/README.md`. The intake flow lives in
+this repo at `.github/workflows/cron-intake.yml` and
+`.github/ISSUE_TEMPLATE/cron-request.yml`. The identity gate ships to each
+target repo via `ci/required-workflow.yml` + `ci/org-ruleset.example.json`.
 
 The earlier `cmd/cronlint` registry/allow-list check is retained as an optional
 per-repo lint.
@@ -142,7 +145,7 @@ scripts/cron_last_runs.py   ->  data/cron/linkedin-actions/last_runs.json
 ## Layout
 
 ```
-fix-cron/
+cron-policy/
   go.mod                       module fixcron
   internal/
     cronsched/   cadence + staleness (IntervalDays, FiringLabel, Health)
@@ -162,14 +165,17 @@ fix-cron/
     cronlint/    prevention-lint CLI
     cronguard/   identity-gate required check
     cronbot/     intake brain CLI (validate + plan + registry upsert)
-  ci/            enterprise rollout templates (issue form, workflows, ruleset)
+  .github/
+    ISSUE_TEMPLATE/cron-request.yml   live intake form
+    workflows/cron-intake.yml         live intake flow (validate + provision)
+  ci/            rollout kit for target repos (identity gate, org ruleset)
 ```
 
 Each package has a sibling `*_test.go`. Go's built-in `testing`.
 
 ## Run it
 
-Run from this `fix-cron/` directory:
+Run from the repo root:
 
 ```
 go run ./cmd/deadman
@@ -209,8 +215,8 @@ violations, so it works as a required CI check.
 ## Future work (out of scope for this prototype)
 
 - Apply mode: open a draft PR per repo for the re-home edit.
-- Live landing step in `ci/intake.yml`: have the li-cron App merge the
-  developer's PR (or author the workflow). Needs an App token + a target repo,
-  so it stays a marked TODO in the template.
+- Live landing step in `.github/workflows/cron-intake.yml`: have the li-cron App
+  merge the developer's PR (or author the workflow). Needs an App token + a
+  target repo, so it stays a marked TODO in the workflow.
 - Identity gate: check the commit author, not just the PR author.
 - Real alert sinks: Slack, GitHub issues.

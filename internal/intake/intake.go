@@ -9,13 +9,13 @@ import (
 	"strings"
 )
 
-// CronRequest is one parsed cron-provisioning request.
+// CronRequest is one parsed cron-provisioning request. The owning team is not a
+// request field — it is fixed policy (see cronbot.OwnerTeam). Cadence is not
+// stored either; the cron expression already encodes it.
 type CronRequest struct {
 	Repo          string
 	Path          string
 	Expr          string
-	OwnerTeam     string
-	Cadence       string
 	Justification string
 }
 
@@ -24,8 +24,6 @@ var headerField = map[string]func(*CronRequest, string){
 	"target repository": func(r *CronRequest, v string) { r.Repo = v },
 	"workflow path":     func(r *CronRequest, v string) { r.Path = v },
 	"cron expression":   func(r *CronRequest, v string) { r.Expr = v },
-	"owner team":        func(r *CronRequest, v string) { r.OwnerTeam = v },
-	"cadence":           func(r *CronRequest, v string) { r.Cadence = v },
 	"justification":     func(r *CronRequest, v string) { r.Justification = v },
 }
 
@@ -76,12 +74,6 @@ func (r CronRequest) Validate() []error {
 	}
 	if len(strings.Fields(r.Expr)) != 5 {
 		errs = append(errs, fmt.Errorf("cron expression %q must be 5 fields", r.Expr))
-	}
-	if r.OwnerTeam == "" {
-		errs = append(errs, fmt.Errorf("owner team is required"))
-	}
-	if r.Cadence == "" {
-		errs = append(errs, fmt.Errorf("cadence is required"))
 	}
 	return errs
 }

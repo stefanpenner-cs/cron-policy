@@ -93,7 +93,6 @@ func readBody(path string) (string, error) {
 func printPlan(p cronbot.Plan, w io.Writer) {
 	fmt.Fprintf(w, "Cron request: %s :: %s\n", p.Repo, p.Path)
 	fmt.Fprintf(w, "  owner team : %s\n", p.Entry.OwnerTeam)
-	fmt.Fprintf(w, "  cadence    : %s\n", p.Entry.Cadence)
 	fmt.Fprintf(w, "  schedule   : '%s'  (bot edit -> '%s')\n", p.OldExpr, p.NewExpr)
 	if !p.CanRewrite {
 		fmt.Fprintln(w, "  WARNING: no safe schedule-neutral rewrite; bot edit equals the original")

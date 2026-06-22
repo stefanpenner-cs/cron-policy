@@ -1,0 +1,109 @@
+# Live cron-intake flow.
+#
+# When someone files a "cron-request" issue, this runs cronbot to parse and
+# validate the request and comments the result back on the issue. That half
+# needs nothing but the default token, so you can see it in action immediately.
+#
+# The provision job (update the registry, land the cron as the li-cron App) is
+# gated on the li-cron App being configured. Until then it is skipped, so the
+# validate+comment demo runs on its own.
+name: cron-intake
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  validate:
+    if: contains(github.event.issue.labels.*.name, 'cron-request')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run cronbot on the request
+        id: cronbot
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          printf '%s' "$ISSUE_BODY" > issue.md
+          set +e
+          go run ./cmd/cronbot --issue-body issue.md --request-url "$ISSUE_URL" > plan.txt 2> err.txt
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "## li-cron intake"
+            echo
+            if [ "$code" -eq 0 ]; then
+              echo "Request is valid. Pending sign-off from \`ci-cd-platform-reviewers\`."
+              echo
+              echo '```'
+              cat plan.txt
+              echo '```'
+            else
+              echo "Request is not valid. Edit the issue and fix:"
+              echo
+              echo '```'
+              cat err.txt
+              echo '```'
+            fi
+          } > comment.md
+      - name: Comment the result on the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body-file comment.md
+      - name: Fail the check when the request is invalid
+        if: steps.cronbot.outputs.exit_code != '0'
+        run: exit 1
+
+  provision:
+    needs: validate
+    if: vars.LI_CRON_APP_ID != ''
+    runs-on: ubuntu-latest
+    environment: cron-approval
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.LI_CRON_APP_ID }}
+          private-key: ${{ secrets.LI_CRON_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Update the central registry
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          printf '%s' "$ISSUE_BODY" > issue.md
+          go run ./cmd/cronbot --issue-body issue.md --request-url "$ISSUE_URL" \
+            --registry registry.json --json-out plan.json
+          git config user.name 'li-cron[bot]'
+          git config user.email 'li-cron[bot]@users.noreply.github.com'
+          git add registry.json
+          git commit -m "chore(cron): register ${{ github.event.issue.title }}" || echo "registry unchanged"
+          git push
+      - name: Land the cron in the target repo
+        run: |
+          echo "TODO(human-judgment): land the cron in the target repo as the App."
+          echo "Pick one: (a) merge the developer's existing PR (squash) so the bot"
+          echo "is the actor, or (b) have the App author the managed workflow."
+          echo "Plan to apply:"; cat plan.json
+      - name: Close the request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh issue close "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --comment "Landed by li-cron[bot]."

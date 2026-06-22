@@ -8,11 +8,9 @@ import (
 
 func req() intake.CronRequest {
 	return intake.CronRequest{
-		Repo:      "linkedin-actions/foo",
-		Path:      ".github/workflows/nightly.yml",
-		Expr:      "0 9 * * *",
-		OwnerTeam: "ci-cd-platform-reviewers",
-		Cadence:   "daily",
+		Repo: "linkedin-actions/foo",
+		Path: ".github/workflows/nightly.yml",
+		Expr: "0 9 * * *",
 	}
 }
 
@@ -34,7 +32,7 @@ func TestBuildPlanBranchAndEntry(t *testing.T) {
 	if p.Branch != "li-cron/linkedin-actions-foo-github-workflows-nightly-yml" {
 		t.Fatalf("unexpected branch: %q", p.Branch)
 	}
-	if p.Entry.OwnerTeam != "ci-cd-platform-reviewers" || p.Entry.Request != "https://github.com/o/r/issues/1" {
+	if p.Entry.OwnerTeam != OwnerTeam || p.Entry.Request != "https://github.com/o/r/issues/1" {
 		t.Fatalf("entry not populated: %#v", p.Entry)
 	}
 	if p.Entry.Expr != "0 9 * * *" {

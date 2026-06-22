@@ -14,14 +14,6 @@ linkedin-actions/foo
 
 0 9 * * *
 
-### Owner team
-
-ci-cd-platform-reviewers
-
-### Cadence
-
-daily
-
 ### Justification
 
 nightly backup job
@@ -33,8 +25,6 @@ func TestParse(t *testing.T) {
 		Repo:          "linkedin-actions/foo",
 		Path:          ".github/workflows/nightly.yml",
 		Expr:          "0 9 * * *",
-		OwnerTeam:     "ci-cd-platform-reviewers",
-		Cadence:       "daily",
 		Justification: "nightly backup job",
 	}
 	if got != want {
@@ -43,9 +33,9 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseNoResponseIsEmpty(t *testing.T) {
-	body := "### Owner team\n\n_No response_\n"
-	if got := Parse(body); got.OwnerTeam != "" {
-		t.Fatalf("_No response_ should be empty, got %q", got.OwnerTeam)
+	body := "### Justification\n\n_No response_\n"
+	if got := Parse(body); got.Justification != "" {
+		t.Fatalf("_No response_ should be empty, got %q", got.Justification)
 	}
 }
 
@@ -57,13 +47,11 @@ func TestValidateGood(t *testing.T) {
 
 func TestValidateBad(t *testing.T) {
 	req := CronRequest{
-		Repo:      "not-a-repo",              // no slash
-		Path:      ".github/workflows/x.txt", // wrong ext
-		Expr:      "0 9 * *",                 // 4 fields
-		OwnerTeam: "",                        // missing
-		Cadence:   "",                        // missing
+		Repo: "not-a-repo",              // no slash
+		Path: ".github/workflows/x.txt", // wrong ext
+		Expr: "0 9 * *",                 // 4 fields
 	}
-	if errs := req.Validate(); len(errs) != 5 {
-		t.Fatalf("want 5 errors, got %d: %v", len(errs), errs)
+	if errs := req.Validate(); len(errs) != 3 {
+		t.Fatalf("want 3 errors, got %d: %v", len(errs), errs)
 	}
 }
