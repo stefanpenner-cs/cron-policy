@@ -104,9 +104,12 @@ func Rewrite(expr string) (string, bool) {
 	if len(f) != 5 {
 		return "", false
 	}
+	orig := strings.Join(f, " ")
 	for _, transform := range []func([]string) bool{expandStar, reorderComma, singleValueRange} {
 		if transform(f) {
-			return strings.Join(f, " "), true
+			if out := strings.Join(f, " "); out != orig {
+				return out, true
+			}
 		}
 	}
 	return "", false

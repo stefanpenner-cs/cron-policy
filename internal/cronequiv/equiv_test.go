@@ -88,3 +88,16 @@ func TestNonFiveFieldReturnsNotOk(t *testing.T) {
 		}
 	}
 }
+
+func TestSymmetricCommaListStillRewrites(t *testing.T) {
+	// A symmetric comma list ("0,0") reverses to itself, so the comma reorder is
+	// a no-op. Rewrite must fall through to another transform and still produce a
+	// textually different cron, else the bot's "edit" won't re-home the actor.
+	got, ok := Rewrite("0,0 4 1 1 0")
+	if !ok || got == "0,0 4 1 1 0" {
+		t.Errorf("Rewrite('0,0 4 1 1 0') = %q ok=%v, want a different 5-field cron", got, ok)
+	}
+	if len(strings.Fields(got)) != 5 {
+		t.Errorf("got %q, want 5 fields", got)
+	}
+}
